@@ -155,6 +155,32 @@ Terminal A immediately shows:
 
 ---
 
+## 5b. The aggregate outside the process (45 s)
+
+**Terminal D:**
+
+```bash
+docker compose run --rm -e STATS_ONCE=1 stats-viewer
+```
+
+This replays the log-compacted `orders.stats` topic from offset 0 and rebuilds
+the running averages — and prints the *same* table the consumer holds in
+memory:
+
+```
+KEY          COUNT           SUM         AVG       MIN       MAX  UPDATED
+----------------------------------------------------------------------------
+ALL             36       8334.76      231.52      8.22    485.68  10:56:32
+Item1            9       2120.63      235.63     20.73    446.63  10:56:32
+...
+```
+
+The point: the aggregation is not trapped in the consumer. Compaction keeps
+the *latest* record per key, so any dashboard — or a restarted consumer — can
+recover the current state by reading the topic from the beginning.
+
+---
+
 ## 6. Kafka UI — the whole picture (1 min)
 
 Open <http://localhost:8080>:

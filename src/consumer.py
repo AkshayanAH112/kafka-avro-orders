@@ -49,8 +49,14 @@ def _stop(_signum, _frame) -> None:
     print("\nStopping consumer (committing offsets)...")
 
 
-def now_ms() -> int:
-    return int(datetime.now(tz=timezone.utc).timestamp() * 1000)
+def now_utc() -> datetime:
+    """Current UTC time.
+
+    Avro ``timestamp-millis`` round-trips as a timezone-aware ``datetime`` --
+    fastavro encodes one on write and hands one back on read -- so the whole
+    pipeline uses ``datetime`` for these fields rather than raw epoch ints.
+    """
+    return datetime.now(tz=timezone.utc)
 
 
 # --------------------------------------------------------------------------
@@ -159,7 +165,7 @@ class DeadLetterQueue:
             "sourceTopic": msg.topic(),
             "sourcePartition": msg.partition(),
             "sourceOffset": msg.offset(),
-            "failedAt": now_ms(),
+            "failedAt": now_utc(),
         }
 
         headers = [
@@ -230,7 +236,7 @@ def main() -> int:
 
     def emit_stats() -> None:
         """Publish the current aggregates to the compacted stats topic."""
-        ts = now_ms()
+        ts = now_utc()
         for stats in (aggregator.overall, *aggregator.per_product.values()):
             side_producer.produce(
                 topic=config.STATS_TOPIC,

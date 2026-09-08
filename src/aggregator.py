@@ -10,6 +10,7 @@ prices is retained, which is what makes it usable on an unbounded stream.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 
 
 @dataclass
@@ -32,7 +33,7 @@ class RunningStats:
     def avg(self) -> float:
         return self.total / self.count if self.count else 0.0
 
-    def as_record(self, updated_at_ms: int) -> dict:
+    def as_record(self, updated_at: datetime) -> dict:
         """Shape this aggregate as an ``OrderStats`` Avro record."""
         return {
             "windowKey": self.key,
@@ -41,7 +42,7 @@ class RunningStats:
             "avgPrice": round(self.avg, 4),
             "minPrice": 0.0 if self.count == 0 else self.min_price,
             "maxPrice": 0.0 if self.count == 0 else self.max_price,
-            "updatedAt": updated_at_ms,
+            "updatedAt": updated_at,
         }
 
 

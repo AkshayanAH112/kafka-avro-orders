@@ -8,7 +8,7 @@ A Kafka pipeline that produces and consumes **order** messages serialised with
 | Requirement | Where it lives |
 |---|---|
 | Avro serialisation | [schemas/order.avsc](schemas/order.avsc) + Confluent Schema Registry serdes in [src/producer.py](src/producer.py) / [src/consumer.py](src/consumer.py) |
-| Real-time aggregation (running average of prices) | [src/aggregator.py](src/aggregator.py), applied in [src/consumer.py](src/consumer.py) |
+| Real-time aggregation (running average of prices) | [src/aggregator.py](src/aggregator.py), applied in [src/consumer.py](src/consumer.py), replayable via [src/stats_consumer.py](src/stats_consumer.py) |
 | Retry logic for temporary failures | `process_with_retry` + `backoff_delay` in [src/consumer.py](src/consumer.py) |
 | Dead Letter Queue for permanently failed messages | `DeadLetterQueue` in [src/consumer.py](src/consumer.py), read back by [src/dlq_consumer.py](src/dlq_consumer.py) |
 
@@ -40,9 +40,9 @@ reproducible on any machine with Docker.
                                      (FailedOrder Avro)     (OrderStats Avro,
                                                     │        log-compacted)
                                                     ▼
-                                            ┌────────────────┐
-                                            │ dlq_consumer.py│
-                                            └────────────────┘
+                                     ┌──────────────┐  ┌──────────────────┐
+                                     │dlq_consumer  │  │ stats_consumer   │
+                                     └──────────────┘  └──────────────────┘
 ```
 
 Kafka runs in **KRaft mode** (no ZooKeeper), single broker, 3 partitions per
@@ -109,6 +109,9 @@ docker compose run --rm producer
 
 # 5. Terminal C - inspect the Dead Letter Queue
 docker compose run --rm dlq-viewer
+
+# 6. Terminal D - rebuild the running averages from the compacted stats topic
+docker compose run --rm stats-viewer
 ```
 
 Kafka UI for browsing topics, messages and registered schemas:
@@ -131,6 +134,8 @@ pip install -r requirements.txt
 python -m src.create_topics
 python -m src.consumer        # terminal A
 python -m src.producer        # terminal B
+python -m src.dlq_consumer    # terminal C
+python -m src.stats_consumer  # terminal D
 ```
 
 ---
@@ -163,16 +168,23 @@ processed order the consumer prints the updated averages and publishes an
 means the topic always holds the *latest* aggregate per key, so a dashboard can
 read the current state by consuming from the beginning.
 
-Every ten orders the consumer also prints the full table:
+Every ten orders the consumer also prints the full table (real output from a
+45-order run):
 
 ```
 KEY          COUNT           SUM         AVG       MIN       MAX
-------------------------------------------------------------------
-ALL             30       7241.55      241.38     11.62    496.03
-Item1            7       1702.11      243.16     32.40    468.77
-Item2            5       1180.42      236.08     11.62    455.19
-...
+----------------------------------------------------------------
+ALL             36       8334.76      231.52      8.22    485.68
+Item1            9       2120.63      235.63     20.73    446.63
+Item2            6       1427.04      237.84     73.47    390.42
+Item3            7       1268.40      181.20      8.22    353.76
+Item4            5       1539.86      307.97     74.12    485.68
+Item5            9       1978.83      219.87     26.51    385.46
 ```
+
+`src/stats_consumer.py` replays `orders.stats` from offset 0 and reproduces
+exactly that table -- which is the proof that the aggregate really does survive
+outside the consumer process.
 
 ### 4.3 Retry logic for temporary failures
 
@@ -231,11 +243,17 @@ prices), so the DLQ is populated within seconds of starting the demo.
 the DLQ never disturbs the main pipeline's offsets:
 
 ```
-TIME      ORDER    PRODUCT        PRICE  TYPE                  TRY  REASON
-----------------------------------------------------------------------------
-10:14:02  1007     Item4         -84.21  VALIDATION              1  price must be >= 0, got -84.21
-10:14:09  1014     Item1       67418.90  VALIDATION              1  price 67418.90 exceeds the maximum allowed 10000.00
-10:14:23  1031     Item2         310.55  TRANSIENT_EXHAUSTED     4  retry budget exhausted after 4 attempts: ...
+TIME      ORDER          PRODUCT         PRICE  TYPE                  TRY  REASON
+--------------------------------------------------------------------------------------------
+10:56:19  1001           Item1         -155.58  VALIDATION              1  price must be >= 0, got -155.58
+10:56:24  1012           Item4          486.69  TRANSIENT_EXHAUSTED     3  retry budget exhausted after 3 attempts: ...
+10:56:30  1038           Item4        85983.31  VALIDATION              1  price 85983.31 exceeds the maximum allowed 10000.00
+10:56:34  <undecodable>                  -1.00  DESERIALIZATION         1  Invalid magic byte
+--------------------------------------------------------------------------------------------
+  total dead letters: 10
+    VALIDATION                6  (60%)
+    TRANSIENT_EXHAUSTED       3  (30%)
+    DESERIALIZATION           1  (10%)
 ```
 
 ### 4.5 Delivery guarantees
@@ -267,6 +285,7 @@ Every knob is an environment variable ([src/config.py](src/config.py)):
 | `MAX_RETRIES` | `3` | Retries after the first attempt |
 | `RETRY_BASE_DELAY_SEC` / `RETRY_MAX_DELAY_SEC` | `0.5` / `8.0` | Backoff curve |
 | `MAX_ALLOWED_PRICE` | `10000.0` | Validation threshold |
+| `DLQ_ONCE` / `STATS_ONCE` | unset | Drain the topic, print, and exit instead of following |
 | `RANDOM_SEED` | unset | Set it for a reproducible run |
 
 Example — a short, fully deterministic run for a screenshot:
@@ -302,6 +321,7 @@ kafka-avro-orders/
 │   ├── consumer.py           retry + DLQ + running average
 │   ├── aggregator.py         O(1) incremental running average
 │   ├── errors.py             transient vs permanent failure taxonomy
-│   └── dlq_consumer.py       DLQ inspector
+│   ├── dlq_consumer.py       DLQ inspector, with a breakdown by failure type
+│   └── stats_consumer.py     rebuilds the running averages from orders.stats
 └── docs/DEMO.md              live demonstration script
 ```

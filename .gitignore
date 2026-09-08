@@ -7,3 +7,5 @@ venv/
 .vscode/
 state/
 *.log
+__pycache__/
+.pytest_cache/

@@ -6,6 +6,8 @@
 #   docker compose up -d kafka schema-registry kafka-ui   # infrastructure
 #   docker compose run --rm consumer                      # terminal 1
 #   docker compose run --rm producer                      # terminal 2
+#   docker compose run --rm dlq-viewer                    # terminal 3
+#   docker compose run --rm stats-viewer                  # terminal 4
 # ---------------------------------------------------------------------------
 
 name: kafka-avro-orders
@@ -114,6 +116,21 @@ services:
         condition: service_completed_successfully
     environment: *app-env
     command: ["python", "-m", "src.consumer"]
+
+  # Pure unit tests -- no broker needed, so this service has no dependencies.
+  tests:
+    build: .
+    image: kafka-avro-orders:latest
+    command: ["python", "-m", "pytest", "-q"]
+
+  stats-viewer:
+    build: .
+    image: kafka-avro-orders:latest
+    depends_on:
+      init-topics:
+        condition: service_completed_successfully
+    environment: *app-env
+    command: ["python", "-m", "src.stats_consumer"]
 
   dlq-viewer:
     build: .

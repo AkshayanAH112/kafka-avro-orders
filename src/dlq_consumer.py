@@ -33,8 +33,15 @@ def _stop(_signum, _frame) -> None:
     _running = False
 
 
-def fmt_ts(ms: int) -> str:
-    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%H:%M:%S")
+def fmt_ts(value) -> str:
+    """Format a ``timestamp-millis`` field.
+
+    fastavro decodes the logical type into an aware ``datetime``; the int
+    branch is a fallback for records written by a plain-Avro producer.
+    """
+    if isinstance(value, datetime):
+        return value.astimezone(timezone.utc).strftime("%H:%M:%S")
+    return datetime.fromtimestamp(value / 1000, tz=timezone.utc).strftime("%H:%M:%S")
 
 
 def main() -> int:
@@ -58,7 +65,7 @@ def main() -> int:
     print("=" * 96)
     print(f"  DEAD LETTER QUEUE  --  {config.DLQ_TOPIC}")
     print("=" * 96)
-    header = (f"{'TIME':<10}{'ORDER':<9}{'PRODUCT':<9}{'PRICE':>12}  "
+    header = (f"{'TIME':<10}{'ORDER':<15}{'PRODUCT':<9}{'PRICE':>12}  "
               f"{'TYPE':<21}{'TRY':>4}  REASON")
     print(header)
     print("-" * 96)
@@ -91,7 +98,7 @@ def main() -> int:
 
             total += 1
             by_type[rec["failureType"]] += 1
-            print(f"{fmt_ts(rec['failedAt']):<10}{rec['orderId']:<9}"
+            print(f"{fmt_ts(rec['failedAt']):<10}{rec['orderId']:<15}"
                   f"{rec['product']:<9}{rec['price']:>12.2f}  "
                   f"{rec['failureType']:<21}{rec['attempts']:>4}  "
                   f"{rec['errorMessage']}")
