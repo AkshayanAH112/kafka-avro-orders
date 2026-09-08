@@ -1,0 +1,125 @@
+# ---------------------------------------------------------------------------
+# EC 8203 ABDE - Chapter 3 Assignment
+# Kafka (KRaft, no ZooKeeper) + Confluent Schema Registry + Kafka UI
+# plus the producer / consumer / dlq-viewer application containers.
+#
+#   docker compose up -d kafka schema-registry kafka-ui   # infrastructure
+#   docker compose run --rm consumer                      # terminal 1
+#   docker compose run --rm producer                      # terminal 2
+# ---------------------------------------------------------------------------
+
+name: kafka-avro-orders
+
+services:
+
+  kafka:
+    image: confluentinc/cp-kafka:7.7.1
+    container_name: kafka
+    hostname: kafka
+    ports:
+      - "9092:9092"     # host clients connect here
+    environment:
+      # --- KRaft (broker + controller in a single node) --------------------
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      # --- Listeners --------------------------------------------------------
+      # INTERNAL : used by other containers  (kafka:29092)
+      # EXTERNAL : used from the Windows host (localhost:9092)
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:29093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      # --- Single-node sizing ----------------------------------------------
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "kafka:29092", "--list"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 20s
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.7.1
+    container_name: schema-registry
+    hostname: schema-registry
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka:29092
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+      SCHEMA_REGISTRY_SCHEMA_COMPATIBILITY_LEVEL: backward
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8081/subjects"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+  # Optional but very useful during the live demo: browse topics, messages
+  # and registered Avro schemas at http://localhost:8080
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://schema-registry:8081
+      DYNAMIC_CONFIG_ENABLED: "true"
+
+  # ---- Application containers ------------------------------------------
+  # They share one image; the command decides which role they play.
+
+  init-topics:
+    build: .
+    image: kafka-avro-orders:latest
+    depends_on:
+      schema-registry:
+        condition: service_healthy
+    environment: &app-env
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      PYTHONUNBUFFERED: "1"
+    command: ["python", "-m", "src.create_topics"]
+
+  producer:
+    build: .
+    image: kafka-avro-orders:latest
+    depends_on:
+      init-topics:
+        condition: service_completed_successfully
+    environment: *app-env
+    command: ["python", "-m", "src.producer"]
+
+  consumer:
+    build: .
+    image: kafka-avro-orders:latest
+    depends_on:
+      init-topics:
+        condition: service_completed_successfully
+    environment: *app-env
+    command: ["python", "-m", "src.consumer"]
+
+  dlq-viewer:
+    build: .
+    image: kafka-avro-orders:latest
+    depends_on:
+      init-topics:
+        condition: service_completed_successfully
+    environment: *app-env
+    command: ["python", "-m", "src.dlq_consumer"]

@@ -1,0 +1,16 @@
+{
+  "type": "record",
+  "name": "OrderStats",
+  "namespace": "com.abde.orders",
+  "doc": "A snapshot of the real-time aggregation state, emitted by the consumer after every processed order.",
+  "fields": [
+    { "name": "windowKey",   "type": "string", "doc": "\"ALL\" for the global running average, otherwise the product name." },
+    { "name": "count",       "type": "long",   "doc": "Number of orders folded into this aggregate so far." },
+    { "name": "sum",         "type": "double", "doc": "Running sum of prices." },
+    { "name": "avgPrice",    "type": "double", "doc": "Running average price = sum / count." },
+    { "name": "minPrice",    "type": "double", "doc": "Smallest price seen so far." },
+    { "name": "maxPrice",    "type": "double", "doc": "Largest price seen so far." },
+    { "name": "updatedAt",   "type": { "type": "long", "logicalType": "timestamp-millis" },
+                             "doc": "When this snapshot was produced." }
+  ]
+}

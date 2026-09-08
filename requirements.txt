@@ -1,0 +1,5 @@
+# Confluent's Kafka client: librdkafka bindings + Schema Registry Avro serdes.
+confluent-kafka[avro,schemaregistry]==2.12.0
+
+# Pretty console output for the live demo (running-average table, DLQ table).
+rich==14.2.0

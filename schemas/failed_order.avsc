@@ -1,0 +1,20 @@
+{
+  "type": "record",
+  "name": "FailedOrder",
+  "namespace": "com.abde.orders",
+  "doc": "An order that could not be processed. Written to the Dead Letter Queue together with the diagnostic context needed to replay or investigate it.",
+  "fields": [
+    { "name": "orderId",       "type": "string", "doc": "orderId of the original order, or \"<undecodable>\" when the payload could not be deserialised." },
+    { "name": "product",       "type": "string", "doc": "product of the original order (empty when undecodable)." },
+    { "name": "price",         "type": "float",  "doc": "price of the original order (-1 when undecodable)." },
+    { "name": "failureType",   "type": { "type": "enum", "name": "FailureType", "symbols": ["DESERIALIZATION", "VALIDATION", "TRANSIENT_EXHAUSTED"] },
+                               "doc": "Why the message was dead-lettered." },
+    { "name": "errorMessage",  "type": "string", "doc": "Exception message from the last failed attempt." },
+    { "name": "attempts",      "type": "int",    "doc": "How many processing attempts were made before giving up." },
+    { "name": "sourceTopic",   "type": "string", "doc": "Topic the message was originally consumed from." },
+    { "name": "sourcePartition","type": "int",   "doc": "Partition the message was consumed from." },
+    { "name": "sourceOffset",  "type": "long",   "doc": "Offset the message was consumed from." },
+    { "name": "failedAt",      "type": { "type": "long", "logicalType": "timestamp-millis" },
+                               "doc": "Wall-clock time at which the message was dead-lettered." }
+  ]
+}
