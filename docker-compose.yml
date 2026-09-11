@@ -3,6 +3,12 @@
 # Kafka (KRaft, no ZooKeeper) + Confluent Schema Registry + Kafka UI
 # plus the producer / consumer / dlq-viewer application containers.
 #
+# Host ports sit in a 1xxxx block on purpose. Windows reserves shifting ranges
+# for Hyper-V and regenerates them on every reboot, which had put 9092 inside a
+# reserved range (check with:
+#   netsh interface ipv4 show excludedportrange protocol=tcp).
+# The low numbered defaults are also commonly taken by other local stacks.
+#
 #   docker compose up -d kafka schema-registry kafka-ui   # infrastructure
 #   docker compose run --rm consumer                      # terminal 1
 #   docker compose run --rm producer                      # terminal 2
@@ -19,7 +25,7 @@ services:
     container_name: kafka
     hostname: kafka
     ports:
-      - "9092:9092"     # host clients connect here
+      - "19192:9092"    # host clients connect here
     environment:
       # --- KRaft (broker + controller in a single node) --------------------
       CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
@@ -31,7 +37,7 @@ services:
       # INTERNAL : used by other containers  (kafka:29092)
       # EXTERNAL : used from the Windows host (localhost:9092)
       KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:29093
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:19192
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       # --- Single-node sizing ----------------------------------------------
@@ -55,7 +61,7 @@ services:
       kafka:
         condition: service_healthy
     ports:
-      - "8081:8081"
+      - "18181:8081"
     environment:
       SCHEMA_REGISTRY_HOST_NAME: schema-registry
       SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka:29092
@@ -77,7 +83,7 @@ services:
       kafka:
         condition: service_healthy
     ports:
-      - "8080:8080"
+      - "18185:8080"
     environment:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092

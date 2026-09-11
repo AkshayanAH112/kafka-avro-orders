@@ -115,7 +115,17 @@ docker compose run --rm stats-viewer
 ```
 
 Kafka UI for browsing topics, messages and registered schemas:
-**http://localhost:8080**
+**http://localhost:18185**
+
+Host ports sit in a `1xxxx` block: Kafka on `19192`, Schema Registry on
+`18181`, Kafka UI on `18185`. Windows reserves shifting port ranges for Hyper-V
+and regenerates them on every reboot, and 9092 landed inside one. If a port
+fails to bind with "an attempt was made to access a socket in a way forbidden
+by its access permissions", check the current reservations with:
+
+```bash
+netsh interface ipv4 show excludedportrange protocol=tcp
+```
 
 Shut everything down (and delete the data):
 
@@ -126,7 +136,7 @@ docker compose down -v
 ### Running without Docker
 
 Requires **Python 3.9–3.13** (`confluent-kafka` has no 3.14 wheels yet) and a
-reachable broker at `localhost:9092`:
+reachable broker at `localhost:19192`:
 
 ```bash
 python -m venv .venv && .venv/Scripts/activate     # Windows

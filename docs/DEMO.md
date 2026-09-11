@@ -1,7 +1,7 @@
 # Live Demonstration Script
 
 Roughly 8 minutes. Have four terminals open in the repository root, plus a
-browser tab on <http://localhost:8080>.
+browser tab on <http://localhost:18185>.
 
 ---
 
@@ -17,7 +17,7 @@ Confirm the stack is healthy:
 
 ```bash
 docker compose ps
-curl http://localhost:8081/subjects        # -> []  (registry is up, nothing registered yet)
+curl http://localhost:18181/subjects        # -> []  (registry is up, nothing registered yet)
 ```
 
 Reset to a clean slate right before starting (optional but makes the numbers
@@ -81,8 +81,8 @@ Narrate, in this order:
 **Prove the schema is registered:**
 
 ```bash
-curl -s http://localhost:8081/subjects
-curl -s http://localhost:8081/subjects/orders-value/versions/1 | python -m json.tool
+curl -s http://localhost:18181/subjects
+curl -s http://localhost:18181/subjects/orders-value/versions/1 | python -m json.tool
 ```
 
 ---
@@ -183,7 +183,7 @@ recover the current state by reading the topic from the beginning.
 
 ## 6. Kafka UI — the whole picture (1 min)
 
-Open <http://localhost:8080>:
+Open <http://localhost:18185>:
 
 * **Topics** → `orders`, `orders.DLQ`, `orders.stats` with their message counts.
 * **Topics → orders → Messages** — Kafka UI decodes the Avro automatically
