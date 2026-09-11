@@ -23,6 +23,9 @@ def main() -> int:
         config.ORDERS_TOPIC: {},
         config.DLQ_TOPIC: {"retention.ms": str(30 * 24 * 60 * 60 * 1000)},
         config.STATS_TOPIC: {"cleanup.policy": "compact"},
+        # Events are a short lived feed for the dashboard, not a record of
+        # truth, so they expire quickly. The DLQ is the durable evidence.
+        config.EVENTS_TOPIC: {"retention.ms": str(60 * 60 * 1000)},
     }
 
     existing = set(admin.list_topics(timeout=15).topics)

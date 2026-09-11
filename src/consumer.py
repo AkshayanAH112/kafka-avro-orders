@@ -192,6 +192,54 @@ class DeadLetterQueue:
 
 
 # --------------------------------------------------------------------------
+# Processing events
+# --------------------------------------------------------------------------
+
+class EventStream:
+    """Publishes one record per order that reached a terminal state.
+
+    Without this, a successful retry leaves no trace anywhere except the
+    consumer's own stdout: the order lands in the running average looking
+    exactly like one that succeeded first time. That makes the retry logic
+    impossible to observe from outside the process, which is a problem for any
+    dashboard and for anyone trying to tell a healthy pipeline from a
+    struggling one.
+
+    Events are deliberately fire and forget. They are telemetry, not a record
+    of truth, so a failure to publish one must never stop an order from being
+    processed. The DLQ remains the durable evidence.
+    """
+
+    def __init__(self, producer: Producer, serializer: AvroSerializer) -> None:
+        self._producer = producer
+        self._serializer = serializer
+        self._key_serializer = StringSerializer("utf_8")
+        self._ctx = SerializationContext(config.EVENTS_TOPIC, MessageField.VALUE)
+
+    def emit(self, order: dict | None, outcome: str, attempts: int,
+             failure_type: str | None = None) -> None:
+        record = {
+            "orderId": (order or {}).get("orderId", "<undecodable>"),
+            "product": (order or {}).get("product", ""),
+            "price": float((order or {}).get("price", -1.0)),
+            "outcome": outcome,
+            "attempts": attempts,
+            "failureType": failure_type,
+            "processedAt": now_utc(),
+        }
+        try:
+            self._producer.produce(
+                topic=config.EVENTS_TOPIC,
+                key=self._key_serializer(record["product"] or "unknown"),
+                value=self._serializer(record, self._ctx),
+            )
+            self._producer.poll(0)
+        except Exception:                  # noqa: BLE001 - telemetry only
+            # Never let a dashboard feed break order processing.
+            pass
+
+
+# --------------------------------------------------------------------------
 # Main loop
 # --------------------------------------------------------------------------
 
@@ -230,14 +278,34 @@ def main() -> int:
     })
     dlq = DeadLetterQueue(side_producer, dlq_serializer)
 
+    event_serializer = AvroSerializer(schema_registry,
+                                      config.PROCESSING_EVENT_SCHEMA)
+    events = EventStream(side_producer, event_serializer)
+
     aggregator = Aggregator()
     stats_ctx = SerializationContext(config.STATS_TOPIC, MessageField.VALUE)
     order_ctx = SerializationContext(config.ORDERS_TOPIC, MessageField.VALUE)
 
     def emit_stats() -> None:
-        """Publish the current aggregates to the compacted stats topic."""
+        """Publish the current aggregates to the compacted stats topic.
+
+        Per product keys only. The global aggregate is deliberately not
+        published, because it is not globally true.
+
+        Each consumer in the group owns a subset of the partitions and keeps
+        its own in-memory aggregate, so its "ALL" covers only the orders it
+        personally saw. With two consumers running, both write their own
+        partial total to the same compacted key and overwrite each other. The
+        result is a global count smaller than the sum of the per product
+        counts, which is how this was found.
+
+        The per product keys do not have that problem. Orders are keyed by
+        product, so every order for a product lands on one partition and is
+        therefore owned by exactly one consumer. Each product aggregate is
+        complete, and any reader can recover the true global by summing them.
+        """
         ts = now_utc()
-        for stats in (aggregator.overall, *aggregator.per_product.values()):
+        for stats in aggregator.per_product.values():
             side_producer.produce(
                 topic=config.STATS_TOPIC,
                 key=key_serializer(stats.key),
@@ -281,6 +349,7 @@ def main() -> int:
                 # Bad bytes or an incompatible schema: no amount of retrying
                 # will help, so this is dead-lettered immediately.
                 dlq.send(msg, None, "DESERIALIZATION", str(exc), attempts=1)
+                events.emit(None, "DEAD_LETTERED", 1, "DESERIALIZATION")
                 consumer.store_offsets(msg)
                 continue
 
@@ -297,12 +366,14 @@ def main() -> int:
                 attempts = (config.MAX_RETRIES + 1
                             if failure_type == "TRANSIENT_EXHAUSTED" else 1)
                 dlq.send(msg, order, failure_type, str(exc), attempts)
+                events.emit(order, "DEAD_LETTERED", attempts, failure_type)
                 consumer.store_offsets(msg)
                 continue
 
             # ---- success: fold into the running average -------------------
             overall, product_stats = aggregator.update(order["product"],
                                                        float(order["price"]))
+            events.emit(order, "PROCESSED", attempts)
             processed += 1
             print(f"     OK in {attempts} attempt(s) | "
                   f"running avg ALL = {overall.avg:.2f} (n={overall.count}) | "

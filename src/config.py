@@ -21,6 +21,10 @@ ORDERS_TOPIC = os.getenv("ORDERS_TOPIC", "orders")
 DLQ_TOPIC = os.getenv("DLQ_TOPIC", "orders.DLQ")
 STATS_TOPIC = os.getenv("STATS_TOPIC", "orders.stats")
 
+# One record per order that reached a terminal state. This is what makes
+# retry behaviour visible to anything other than the consumer's console.
+EVENTS_TOPIC = os.getenv("EVENTS_TOPIC", "orders.events")
+
 TOPIC_PARTITIONS = int(os.getenv("TOPIC_PARTITIONS", "3"))
 TOPIC_REPLICATION = int(os.getenv("TOPIC_REPLICATION", "1"))
 
@@ -73,3 +77,4 @@ def load_schema(filename: str) -> str:
 ORDER_SCHEMA = load_schema("order.avsc")
 FAILED_ORDER_SCHEMA = load_schema("failed_order.avsc")
 ORDER_STATS_SCHEMA = load_schema("order_stats.avsc")
+PROCESSING_EVENT_SCHEMA = load_schema("processing_event.avsc")

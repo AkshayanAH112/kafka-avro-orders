@@ -12,6 +12,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY schemas/ ./schemas/
 COPY src/ ./src/
+COPY web/ ./web/
 COPY tests/ ./tests/
 
 CMD ["python", "-m", "src.consumer"]

@@ -138,6 +138,22 @@ services:
     environment: *app-env
     command: ["python", "-m", "src.stats_consumer"]
 
+  # Web dashboard. Reads the topics directly and holds no database: every
+  # figure is rebuilt by consuming Kafka, which is also a demonstration that
+  # the log compacted stats topic really can reconstruct state.
+  web:
+    build: .
+    image: kafka-avro-orders:latest
+    container_name: orders-web
+    depends_on:
+      init-topics:
+        condition: service_completed_successfully
+    ports:
+      - "18186:8000"
+    environment: *app-env
+    command: ["uvicorn", "web.app:app", "--host", "0.0.0.0", "--port", "8000"]
+    restart: unless-stopped
+
   dlq-viewer:
     build: .
     image: kafka-avro-orders:latest

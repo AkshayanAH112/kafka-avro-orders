@@ -39,6 +39,30 @@ def fmt_ts(value) -> str:
     return datetime.fromtimestamp(value / 1000, tz=timezone.utc).strftime("%H:%M:%S")
 
 
+def derive_overall(latest: dict[str, dict]) -> dict | None:
+    """Sum the per product aggregates into a true global.
+
+    The consumer publishes per product keys only, because each is owned by a
+    single consumer and therefore complete. Summing them here is what makes the
+    global correct no matter how many consumers are in the group.
+    """
+    products = [r for r in latest.values() if r["windowKey"] != "ALL"]
+    if not products:
+        return None
+
+    count = sum(r["count"] for r in products)
+    total = sum(r["sum"] for r in products)
+    return {
+        "windowKey": "ALL",
+        "count": count,
+        "sum": round(total, 4),
+        "avgPrice": round(total / count, 4) if count else 0.0,
+        "minPrice": min(r["minPrice"] for r in products),
+        "maxPrice": max(r["maxPrice"] for r in products),
+        "updatedAt": max(r["updatedAt"] for r in products),
+    }
+
+
 def render(latest: dict[str, dict]) -> None:
     header = (f"{'KEY':<10}{'COUNT':>8}{'SUM':>14}{'AVG':>12}"
               f"{'MIN':>10}{'MAX':>10}  {'UPDATED':<10}")
@@ -48,9 +72,12 @@ def render(latest: dict[str, dict]) -> None:
     print(header)
     print("-" * len(header))
 
-    # "ALL" first, then products alphabetically.
-    for key in sorted(latest, key=lambda k: (k != "ALL", k)):
-        r = latest[key]
+    # A stale "ALL" key may still sit in the compacted topic from an older
+    # version that published one. It is ignored and recomputed.
+    products = {k: v for k, v in latest.items() if k != "ALL"}
+    overall = derive_overall(products)
+
+    for r in ([overall] if overall else []) + [products[k] for k in sorted(products)]:
         print(f"{r['windowKey']:<10}{r['count']:>8}{r['sum']:>14.2f}"
               f"{r['avgPrice']:>12.2f}{r['minPrice']:>10.2f}{r['maxPrice']:>10.2f}"
               f"  {fmt_ts(r['updatedAt']):<10}")

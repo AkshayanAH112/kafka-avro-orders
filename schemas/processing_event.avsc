@@ -1,0 +1,18 @@
+{
+  "type": "record",
+  "name": "ProcessingEvent",
+  "namespace": "com.abde.orders",
+  "doc": "One record per order that reached a terminal state, published by the consumer. Exists so that retry behaviour is observable outside the consumer's own console: a successful retry leaves no other trace, because the order simply ends up in the running average like any other.",
+  "fields": [
+    { "name": "orderId",     "type": "string", "doc": "Order this event is about." },
+    { "name": "product",     "type": "string", "doc": "Product name, empty when the payload could not be decoded." },
+    { "name": "price",       "type": "float",  "doc": "Price, -1 when undecodable." },
+    { "name": "outcome",     "type": { "type": "enum", "name": "Outcome", "symbols": ["PROCESSED", "DEAD_LETTERED"] },
+                             "doc": "Whether the order was accepted or parked in the DLQ." },
+    { "name": "attempts",    "type": "int",    "doc": "How many processing attempts it took. Anything above 1 means the retry path was exercised." },
+    { "name": "failureType", "type": ["null", "string"], "default": null,
+                             "doc": "Set only when outcome is DEAD_LETTERED." },
+    { "name": "processedAt", "type": { "type": "long", "logicalType": "timestamp-millis" },
+                             "doc": "When the consumer finished with this order." }
+  ]
+}

@@ -107,12 +107,28 @@ docker compose run --rm consumer
 # 4. Terminal B - the producer
 docker compose run --rm producer
 
-# 5. Terminal C - inspect the Dead Letter Queue
+# 5. The web dashboard at http://localhost:18186
+docker compose up -d web
+
+# 6. Terminal C - inspect the Dead Letter Queue
 docker compose run --rm dlq-viewer
 
-# 6. Terminal D - rebuild the running averages from the compacted stats topic
+# 7. Terminal D - rebuild the running averages from the compacted stats topic
 docker compose run --rm stats-viewer
 ```
+
+**Web dashboard: http://localhost:18186**
+
+![dashboard](docs/screenshots/web-ui.png)
+
+Six panels, one per thing the assignment asks for: the running average rebuilt
+from the compacted stats topic, retry behaviour with the attempt distribution,
+the dead letter queue by failure type, the live Avro decoded order feed, the
+per order outcomes, and the health of each topic reader.
+
+It holds no database. Every figure is rebuilt by consuming Kafka, which is also
+a demonstration that the log compacted `orders.stats` topic really can
+reconstruct state: restart the container and the whole dashboard comes back.
 
 Kafka UI for browsing topics, messages and registered schemas:
 **http://localhost:18185**
