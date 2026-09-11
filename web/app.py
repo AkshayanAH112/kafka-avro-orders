@@ -189,15 +189,21 @@ def _on_dlq(record: dict, _msg) -> None:
 def start_readers() -> None:
     """One daemon thread per topic.
 
-    orders and orders.events start at the latest offset, because a live feed
-    of what happened before the page was opened is noise. stats and the DLQ
-    start from the beginning, because those are cumulative state that the
-    dashboard is meant to reconstruct.
+    Only the raw order feed starts at the latest offset. It is genuinely a
+    live tail, and replaying yesterday's orders into it would misrepresent what
+    is happening right now.
+
+    Everything else starts from the beginning, because it is state the
+    dashboard is meant to reconstruct rather than a tail: the compacted stats
+    topic, the dead letter queue, and the processing events. Reading events
+    from the beginning is what keeps the retry panel populated across a
+    restart; its retention is one hour and the buffer is capped, so the replay
+    is bounded either way.
     """
     readers = [
         (config.ORDERS_TOPIC, config.ORDER_SCHEMA, "ui-orders", _on_order, "latest"),
         (config.STATS_TOPIC, config.ORDER_STATS_SCHEMA, "ui-stats", _on_stats, "earliest"),
-        (config.EVENTS_TOPIC, config.PROCESSING_EVENT_SCHEMA, "ui-events", _on_event, "latest"),
+        (config.EVENTS_TOPIC, config.PROCESSING_EVENT_SCHEMA, "ui-events", _on_event, "earliest"),
         (config.DLQ_TOPIC, config.FAILED_ORDER_SCHEMA, "ui-dlq", _on_dlq, "earliest"),
     ]
     for topic, schema, group, handler, offset in readers:

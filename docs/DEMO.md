@@ -1,7 +1,8 @@
 # Live Demonstration Script
 
-Roughly 8 minutes. Have four terminals open in the repository root, plus a
-browser tab on <http://localhost:18185>.
+Roughly 11 minutes, or 10 if you skip the optional scaling section. Have four
+terminals open in the repository root, plus two browser tabs: the dashboard on
+<http://localhost:18186> and Kafka UI on <http://localhost:18185>.
 
 > **Shell:** every command below is written for **bash**, and was verified in
 > Git Bash on Windows. Windows PowerShell 5.1 will reject some of them: `&&` is
@@ -23,6 +24,7 @@ browser tab on <http://localhost:18185>.
 docker compose up -d kafka schema-registry kafka-ui
 docker compose build            # pre-build the app image so nothing compiles on stage
 docker compose run --rm init-topics
+docker compose up -d web        # the dashboard
 ```
 
 Confirm the stack is healthy:
@@ -30,7 +32,16 @@ Confirm the stack is healthy:
 ```bash
 docker compose ps
 curl http://localhost:18181/subjects        # -> []  (registry is up, nothing registered yet)
+curl -s http://localhost:18186/api/health   # -> all four readers "reading"
 ```
+
+Open **<http://localhost:18186>** in a browser and leave it on screen for the
+whole demo. It is the spine of the walkthrough; the terminals are the detail
+view behind each panel.
+
+**Run only one consumer.** More than one is a legitimate thing to do, and
+section 7 covers what happens, but starting the demo with two makes the numbers
+harder to narrate.
 
 Reset to a clean slate right before starting (optional but makes the numbers
 easier to narrate):
@@ -39,6 +50,7 @@ easier to narrate):
 docker compose down -v
 docker compose up -d kafka schema-registry kafka-ui
 docker compose run --rm init-topics
+docker compose up -d web
 ```
 
 ---
@@ -100,6 +112,52 @@ curl -s http://localhost:18181/subjects/orders-value/versions/1 | python -m json
 
 ---
 
+## 3b. The dashboard, everything at once (1 min)
+
+Switch to **<http://localhost:18186>**. This is the fastest way to show all
+four requirements in one frame, and it is worth pausing on.
+
+> "Six panels. Top left is the running average, rebuilt by replaying the
+> compacted stats topic. Top middle is retry behaviour. Top right is the dead
+> letter queue. Bottom left is the live order feed, decoded from Avro on the
+> wire."
+
+Two things to say explicitly, because they are the design points a marker
+cares about:
+
+> "There is no database anywhere in this. Every number on the page is rebuilt
+> by consuming Kafka. That is what the compacted stats topic is for, and this
+> page is the proof it works: I can restart this container and the whole
+> dashboard comes back."
+
+```bash
+docker compose restart web
+```
+
+**It takes about 45 seconds**, most of it the four consumer groups joining, so
+start it and keep talking. Measured, not estimated. Use the wait:
+
+> "While that comes back, notice what it has to do. It has no state of its own
+> to reload. It has to replay the compacted stats topic from offset zero and
+> the dead letter queue from offset zero, and rebuild both from scratch.
+>
+> The per product averages you are about to see again were computed by a
+> consumer process that is still running and never told this page anything.
+> They came out of Kafka."
+
+Then refresh. The running average and the dead letter queue are both back,
+including dead letters from before the page was ever opened.
+
+If you are short of time, skip the restart and make the same point from what is
+already on screen: the DLQ panel shows failures that happened before you opened
+the browser, which it could only know by replaying the topic.
+
+> "And each panel reads with its own consumer group, so watching this dashboard
+> never moves the processing consumer's offsets. Observing the system does not
+> disturb it."
+
+---
+
 ## 4. Retry logic (1.5 min)
 
 Wait for a retry sequence to scroll past in Terminal A — at a 20 % failure rate
@@ -112,6 +170,16 @@ one appears every few messages:
      recovered on attempt 3/4
      OK in 3 attempt(s) | running avg ALL = 238.91 (n=44)
 ```
+
+Now show the same thing on the dashboard, **Retry behaviour** panel. The three
+figures are first try, recovered on retry, and budget exhausted, with the
+attempt distribution underneath.
+
+> "This panel exists because a successful retry is otherwise invisible. An
+> order that recovered on its third attempt ends up in the running average
+> looking exactly like one that succeeded immediately. So the consumer
+> publishes one event per order carrying the attempt count, and that is the
+> only place the retry logic can be observed from outside the process."
 
 Points to make:
 
@@ -166,6 +234,10 @@ Terminal A immediately shows:
   >> DLQ  orderId=<undecodable> type=DESERIALIZATION attempts=1 reason=...
 ```
 
+The dashboard's **Dead letter queue** panel picks it up within two seconds, and
+the breakdown at the top gains a `deserialization` count beside `validation`
+and `transient exhausted`.
+
 ---
 
 ## 5b. The aggregate outside the process (45 s)
@@ -208,7 +280,45 @@ Open <http://localhost:18185>:
 
 ---
 
-## 7. Graceful shutdown (30 s)
+## 7. Scaling the consumer, optional but strong (1 min)
+
+Only if you have time. It shows you understand the design's limits, which is
+usually worth more than showing it working.
+
+Start a second consumer in a spare terminal:
+
+```bash
+docker compose run --rm consumer
+```
+
+```bash
+docker compose exec kafka kafka-consumer-groups   --bootstrap-server kafka:29092 --group order-processor --describe
+```
+
+> "The group rebalances and the three partitions split across the two
+> consumers. Throughput roughly doubles.
+>
+> This is also where I found a bug. Each consumer keeps its own in-memory
+> aggregate. Originally both published a global 'ALL' figure to the same
+> compacted key, so they overwrote each other and the dashboard showed a global
+> count smaller than the sum of the per product counts.
+>
+> The per product keys were never affected, because orders are keyed by
+> product, so every order for a product lands on one partition owned by exactly
+> one consumer. Each product aggregate is complete. Only the global was wrong.
+>
+> So the consumer no longer publishes a global at all. Readers sum the per
+> product rows instead, which is correct for any number of consumers rather
+> than only for one."
+
+Check the dashboard: the per product counts still sum exactly to the ALL count,
+with two consumers running.
+
+Stop the second consumer with Ctrl+C and the group rebalances back.
+
+---
+
+## 8. Graceful shutdown (30 s)
 
 `Ctrl+C` in Terminal A. The consumer commits outstanding offsets, flushes the
 DLQ producer, and prints the final aggregation:
@@ -235,6 +345,31 @@ the DLQ).
 ---
 
 ## Anticipated questions
+
+**What happens if you run more than one consumer?**
+The group rebalances and the partitions split, so throughput scales. The
+aggregation needed a fix to survive it, covered in section 7: each consumer
+aggregates only its own partitions, so a global figure published by one
+consumer covers only its share. Per product aggregates are safe because orders
+are keyed by product, so a product is owned by exactly one consumer. The
+consumer therefore publishes per product keys only and readers derive the
+global by summing. Ordering is preserved per product either way, which is what
+the aggregation actually depends on.
+
+**Why is there a separate orders.events topic?**
+Because a successful retry is otherwise invisible. An order that recovered on
+its third attempt lands in the running average looking identical to one that
+succeeded first time, so nothing outside the consumer process can tell whether
+the retry logic is working or whether the downstream is healthy. The events
+topic carries the attempt count for every order that reached a terminal state.
+It is telemetry, not a record of truth: retention is one hour, publishing is
+fire and forget so it can never block order processing, and the DLQ remains
+the durable evidence.
+
+**Does the dashboard affect the pipeline?**
+No. Each panel reads with its own consumer group, so it never moves the
+processing group's offsets, and it only ever reads. Stopping the dashboard
+changes nothing about processing.
 
 **What is that yellow GETPID warning when the consumer starts?**
 It appears once, in the first second or two after a fresh `docker compose up`:
