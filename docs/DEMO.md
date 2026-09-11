@@ -236,6 +236,23 @@ the DLQ).
 
 ## Anticipated questions
 
+**What is that yellow GETPID warning when the consumer starts?**
+It appears once, in the first second or two after a fresh `docker compose up`:
+
+```
+%4|...|GETPID|order-consumer-side#producer-2| [thrd:main]: Failed to acquire
+idempotence PID from broker kafka:29092/1: Broker: Coordinator load in progress: retrying
+```
+
+`%4` is a warning, not an error. The DLQ producer runs with
+`enable.idempotence=true`, so it needs a Producer ID before its first send. The
+broker's healthcheck passes as soon as the metadata API answers, which is
+slightly earlier than the transaction coordinator finishes loading, so the
+consumer asks a moment too soon. librdkafka retries on its own and blocks the
+first send until it has the PID, so nothing is dropped or duplicated. Restart
+the consumer against an already warm broker and it does not appear at all.
+
+
 **Why not retry inside a retry *topic* instead of in-process?**
 In-process retry is the right tool for short, sub-second blips: it keeps
 ordering and needs no extra infrastructure. Its cost is head-of-line blocking —
