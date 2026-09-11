@@ -141,6 +141,8 @@ reachable broker at `localhost:19192`:
 ```bash
 python -m venv .venv && .venv/Scripts/activate     # Windows
 pip install -r requirements.txt
+export KAFKA_BOOTSTRAP_SERVERS=localhost:19192
+export SCHEMA_REGISTRY_URL=http://localhost:18181
 python -m src.create_topics
 python -m src.consumer        # terminal A
 python -m src.producer        # terminal B
@@ -285,8 +287,8 @@ Every knob is an environment variable ([src/config.py](src/config.py)):
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | Broker list (`kafka:29092` in Compose) |
-| `SCHEMA_REGISTRY_URL` | `http://localhost:8081` | Schema Registry |
+| `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | Broker list. Compose sets `kafka:29092`; from the host use `localhost:19192` |
+| `SCHEMA_REGISTRY_URL` | `http://localhost:8081` | Schema Registry. Compose sets `http://schema-registry:8081`; from the host use `http://localhost:18181` |
 | `ORDERS_TOPIC` / `DLQ_TOPIC` / `STATS_TOPIC` | `orders` / `orders.DLQ` / `orders.stats` | Topic names |
 | `MESSAGE_COUNT` | `0` (unlimited) | How many orders to produce |
 | `PRODUCE_INTERVAL_SEC` | `1.0` | Delay between orders |
