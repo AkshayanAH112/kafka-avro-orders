@@ -3,6 +3,18 @@
 Roughly 8 minutes. Have four terminals open in the repository root, plus a
 browser tab on <http://localhost:18185>.
 
+> **Shell:** every command below is written for **bash**, and was verified in
+> Git Bash on Windows. Windows PowerShell 5.1 will reject some of them: `&&` is
+> not a valid separator, `curl` is an alias for `Invoke-WebRequest` and does not
+> accept `-s`, and `head` and `tail` do not exist. Open Git Bash first:
+>
+> ```
+> bash -l
+> ```
+>
+> Or right click the project folder and choose "Git Bash Here".
+
+
 ---
 
 ## 0. Before the demo (do this in advance)
@@ -24,7 +36,8 @@ Reset to a clean slate right before starting (optional but makes the numbers
 easier to narrate):
 
 ```bash
-docker compose down -v && docker compose up -d kafka schema-registry kafka-ui
+docker compose down -v
+docker compose up -d kafka schema-registry kafka-ui
 docker compose run --rm init-topics
 ```
 

@@ -139,7 +139,8 @@ Requires **Python 3.9–3.13** (`confluent-kafka` has no 3.14 wheels yet) and a
 reachable broker at `localhost:19192`:
 
 ```bash
-python -m venv .venv && .venv/Scripts/activate     # Windows
+python -m venv .venv
+source .venv/Scripts/activate     # Git Bash on Windows
 pip install -r requirements.txt
 export KAFKA_BOOTSTRAP_SERVERS=localhost:19192
 export SCHEMA_REGISTRY_URL=http://localhost:18181
